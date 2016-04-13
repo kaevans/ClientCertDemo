@@ -26,6 +26,8 @@ namespace ClientCertWeb
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddOptions();
+            services.Configure<CertificateValidationConfig>(Configuration.GetSection("CertificateValidation"));
             // Add framework services.
             services.AddMvc();
         }
@@ -39,6 +41,8 @@ namespace ClientCertWeb
             app.UseIISPlatformHandler();
 
             app.UseStaticFiles();
+
+            app.UseClientCertMiddleware();
 
             app.UseMvc();
         }
