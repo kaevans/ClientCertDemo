@@ -19,7 +19,7 @@ namespace ClientCertWeb
         {
             _next = next;
             _config = options.Value;
-            _logger = loggerFactory.CreateLogger<ClientCertificateMiddleware>();
+            _logger = loggerFactory.CreateLogger("ClientCertificateMiddleware");
         }
 
         public async Task Invoke(HttpContext context)
@@ -47,21 +47,21 @@ namespace ClientCertWeb
                     else
                     {
                         //Stop the pipeline here.
-                        _logger.LogError("Certificate is not valid");
+                        _logger.LogInformation("Certificate with thumbprint " + certificate.Thumbprint + " is not valid");
                         context.Response.StatusCode = 403;
                     }
                 }
                 catch (Exception ex)
-                {
-                    //What to do with exceptions in middleware?
+                {                    
                     _logger.LogError(ex.Message, ex);
-                    await context.Response.WriteAsync(ex.Message);
+                    //Assume that an error means unable to parse the
+                    //certificate or an invalid cert was provided.
                     context.Response.StatusCode = 403;
                 }
             }
             else
             {
-                _logger.LogError("X-ARR-ClientCert header is missing");
+                _logger.LogDebug("X-ARR-ClientCert header is missing");
                 context.Response.StatusCode = 403;
             }
         }
@@ -82,7 +82,12 @@ namespace ClientCertWeb
             if (null == certificate) return false;
 
             // 1. Check time validity of certificate
-            if (DateTime.Compare(DateTime.Now, certificate.NotBefore) < 0 || DateTime.Compare(DateTime.Now, certificate.NotAfter) > 0) return false;
+            if (DateTime.Compare(DateTime.UtcNow, certificate.NotBefore) < 0 || DateTime.Compare(DateTime.UtcNow, certificate.NotAfter) > 0)
+            {
+                _logger.LogDebug("Certificate with thumbprint " + certificate.Thumbprint + " is not within a valid time window.");
+                return false;
+            }
+            
 
             // 2. Check subject name of certificate
             bool foundSubject = false;
@@ -90,12 +95,16 @@ namespace ClientCertWeb
             foreach (string s in certSubjectData)
             {
                 if (String.Compare(s.Trim(), _config.Subject) == 0)
-                {
+                {                    
                     foundSubject = true;
                     break;
                 }
             }
-            if (!foundSubject) return false;
+            if (!foundSubject)
+            {
+                _logger.LogDebug("Certificate with thumbprint " + certificate.Thumbprint + " does not have a matching Subject.");
+                return false;
+            }
 
             // 3. Check issuer name of certificate
             bool foundIssuerCN = false;
@@ -110,10 +119,18 @@ namespace ClientCertWeb
 
             }
 
-            if (!foundIssuerCN) return false;
+            if (!foundIssuerCN)
+            {
+                _logger.LogDebug("Certificate with thumbprint " + certificate.Thumbprint + " does not have a matching Issuer.");
+                return false;
+            }
 
             // 4. Check thumprint of certificate
-            if (String.Compare(certificate.Thumbprint.Trim().ToUpper(), _config.Thumbprint) != 0) return false;
+            if (String.Compare(certificate.Thumbprint.Trim().ToUpper(), _config.Thumbprint) != 0)
+            {
+                _logger.LogDebug("Certificate with thumbprint " + certificate.Thumbprint + " does not have a matching Thumbprint.");
+                return false;
+            }
 
             // If you also want to test if the certificate chains to a Trusted Root Authority you can uncomment the code below
             //
